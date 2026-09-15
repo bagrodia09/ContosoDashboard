@@ -161,6 +161,34 @@ public interface IFileStorageService
 
 The application automatically creates and seeds the database on first run with sample users, projects, tasks, and announcements.
 
+### Offline personal documents (P1)
+
+The P1 document flow is intentionally training-only and works without Azure, an
+external malware scanner, or an internet connection. Files are validated for
+size, extension/MIME consistency, and metadata, then stored below
+`AppData/uploads` (outside `wwwroot`) using generated GUID names. The mock
+cookie identity is the source of truth: users can list and download only their
+own documents.
+
+The first startup creates a new database from the current EF model. For an
+existing database created by the old `EnsureCreated` path, startup performs an
+additive, idempotent `Documents` schema upgrade after checking the expected
+`Users` table; it never drops or recreates existing tables. Back up the LocalDB
+database before this first upgrade. A failed preflight or SQL operation stops
+startup rather than claiming the document feature is available. Configure the
+root and 25 MiB limit in `appsettings.json` under `DocumentStorage`.
+
+To smoke-test the flow offline: log in as a mock user, open **My Documents**,
+select a supported file, enter a title and category, upload it, and confirm it
+appears in the list and downloads. Repeat with an unsupported type, an oversized
+file, blank metadata, and a mixed-validity selection; each must fail without
+leaving metadata or files. Log in as a different mock user and confirm the
+original document is neither listed nor downloadable.
+
+This is not a production security guarantee: real malware scanning, cloud
+storage, password identity, and production threat controls are intentionally
+out of scope for the offline training application.
+
 ### Testing Security Features
 
 #### Test 1: Authentication Required
