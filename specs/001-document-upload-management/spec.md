@@ -10,6 +10,16 @@
 > validation expectations explicitly. Do not imply production readiness for this
 > training application.
 
+## Clarifications
+
+### Session 2026-09-15
+
+- Q: How should personal-document visibility work in the P1 MVP? → A: Owner-only visibility by default; personal documents remain private unless explicitly shared or associated with a project.
+- Q: For the offline training MVP, how should the stakeholder's malware-scanning requirement be handled? → A: Defer real malware scanning; perform size, extension/type, content-type, and metadata validation only.
+- Q: For selecting multiple files, how should document metadata be entered? → A: Enter metadata separately for each file.
+- Q: Should the P1 MVP allow a user to associate an uploaded personal document with a project? → A: Strictly personal; no project association in P1.
+- Q: If a multi-file upload contains both valid and invalid files, how should the P1 MVP handle the batch? → A: Reject the entire batch and persist none.
+
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
@@ -138,16 +148,17 @@ As a dashboard user or administrator, I want document activity surfaced in the d
 - **FR-002**: The system MUST accept PDF, Microsoft Word/Excel/PowerPoint, text, JPEG, and PNG files, and MUST reject unsupported types with an actionable message.
 - **FR-003**: The system MUST reject each file larger than 25 MB with an actionable message.
 - **FR-004**: The uploader MUST provide a non-empty document title and select one category from Project Documents, Team Resources, Personal Files, Reports, Presentations, or Other.
-- **FR-005**: The uploader MAY provide a description, associated project, and custom tags.
+- **FR-005**: The uploader MAY provide a description and custom tags. Project association is not available in the P1 personal-document journey and is deferred to later project-document stories.
 - **FR-006**: The system MUST capture upload date/time, uploader identity, file size, and MIME/content type for each accepted document; the content-type value MUST support the stakeholder-specified long values.
 - **FR-007**: The system MUST validate size, extension/type, content type, required metadata, and applicable project authorization before persistence.
 - **FR-008**: The system MUST store file content outside `wwwroot` through `IFileStorageService`, use a unique relative path that never directly uses a user-supplied filename, and retain a portable relative path in metadata.
 - **FR-009**: The upload workflow MUST generate a unique path, save the file, and then save metadata; a failed file save MUST NOT leave a document metadata record.
 - **FR-010**: The system MUST enforce authorization in the service layer for every document read, download, preview, upload, replace, share, and delete operation, in addition to applicable page or endpoint checks.
-- **FR-011**: In the P1 journey, My Documents MUST list all documents uploaded by the current user and show title, category, upload date, file size, and associated project.
+- **FR-011**: In the P1 journey, My Documents MUST list all documents uploaded by the current user and show title, category, upload date, file size, and an empty associated-project value because P1 documents are strictly personal.
 - **FR-012**: The system MUST support offline P1 upload and viewing using local training storage and mock authentication, without cloud or external service dependencies.
 - **FR-013**: The system MUST provide upload progress and a success or error result after an upload attempt.
-- **FR-014**: The system MUST [NEEDS CLARIFICATION: For a multi-file selection, should title/category/description/project/tags be entered once and applied to every file, or must metadata be entered separately for each file?]
+- **FR-014**: For a multi-file selection, the system MUST collect and validate title, category, description, project, and tags separately for each file.
+- **FR-014a**: If any file or its metadata in a multi-file P1 submission is invalid, the system MUST reject the entire batch, persist no files or metadata from that batch, and identify the corrective validation failures.
 - **FR-015**: The system MUST support later sorting by title, upload date, category, and file size; filtering by category, project, and date range; and searching title, description, tags, uploader, and project, while returning only authorized results.
 - **FR-016**: The system MUST support later download of any accessible document and in-browser preview of accessible PDF and image documents.
 - **FR-017**: The system MUST support later owner metadata edits and file replacement using the same validation, storage ordering, and authorization rules.
@@ -156,17 +167,17 @@ As a dashboard user or administrator, I want document activity surfaced in the d
 - **FR-020**: The system MUST support later project/task associations, project-member viewing/downloading, project-manager project uploads, task-page attachment visibility, task-page uploads, and automatic task-project association.
 - **FR-021**: The system MUST support later dashboard Recent Documents (the five most recent user uploads), dashboard document counts, notifications for new project documents, and administrator activity reports.
 - **FR-022**: The system MUST log later uploads, downloads, deletions, and share actions sufficiently to produce the stakeholder-defined administrator reports.
-- **FR-023**: The system MUST [NEEDS CLARIFICATION: The stakeholder requires malware scanning before storage, while the constitution prohibits an unavailable offline scanner. Should the training MVP explicitly record scanning as unavailable and defer it, or is an approved offline scanning substitute intended?]
-- **FR-024**: The training implementation MUST document that real malware scanning and production security assurances are unavailable offline and are a production migration concern; size/type/metadata validation remains required.
+- **FR-023**: The training MVP MUST defer real malware scanning because it operates offline; size, extension/type, content type, and metadata validation MUST occur before persistence.
+- **FR-024**: The training implementation MUST document that real malware scanning and production security assurances are unavailable offline and are a production migration concern; the storage and validation boundary MUST remain replaceable for a future production scanner.
 - **FR-025**: The system MUST preserve the existing mock-authentication claims, role, project, team, and ownership rules; it MUST NOT introduce real identity-provider or password requirements.
 - **FR-026**: The document identifier MUST be an integer and category values MUST be stored as text, consistent with the stakeholder constraints.
-- **FR-027**: The P1 personal-document visibility rule MUST be [NEEDS CLARIFICATION: Should personal documents be visible only to their uploader, or may team leads and administrators view/manage them under the stakeholder role descriptions?]
+- **FR-027**: The P1 personal-document visibility rule MUST be owner-only by default; personal documents remain private unless explicitly shared or associated with a project.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Document**: An uploaded file's metadata and ownership, including integer identifier, title, description, category text, tags, original filename for display, safe relative storage path, upload time, uploader, file size, content type, and optional project/task associations.
 - **Document Share**: A later relationship granting a document to a specific user or team and supporting recipient notification and Shared with Me visibility.
-- **Project/Task association**: A later relationship connecting a document to the project or task context in which it is relevant.
+- **Project/Task association**: A later relationship connecting a document to the project or task context in which it is relevant; unavailable for strictly personal P1 uploads.
 - **Document activity**: A later record of upload, download, deletion, or share activity used by administrator reporting.
 
 ## Assumptions
@@ -175,15 +186,17 @@ As a dashboard user or administrator, I want document activity surfaced in the d
 - The feature remains a web-only, offline-capable training feature; local filesystem storage is available.
 - The stakeholder's proposed 25 MB limit and supported-type list apply to each file.
 - The stakeholder's implementation notes are treated as architectural constraints only where they agree with the constitution; the constitution governs offline limitations and service-level authorization.
-- P1 does not include project association, sharing, replacement, deletion, search, preview, task/dashboard integration, notifications, or reporting unless a later story is explicitly implemented.
+- P1 does not include project association, sharing, replacement, deletion, search, preview, task/dashboard integration, notifications, or reporting unless a later story is explicitly implemented. P1 uploads are strictly personal and owner-only; later sharing or project association may grant access under their respective authorization rules.
 - Performance figures from the stakeholder document (30-second upload, two-second lists/search, three-second preview) are candidate later benchmarks, not offline training release gates.
 - The stakeholder's three-month adoption, categorization, and zero-incident metrics are business hypotheses and are not evidence of production readiness.
 
 ## Unresolved Ambiguities
 
-- **Metadata for multiple files (FR-014)**: The stakeholder document requires one-or-more-file selection and metadata but does not define whether metadata is per file or shared across the selection.
-- **Malware scanning (FR-023)**: The stakeholder requirement conflicts with the constitution's offline limitation; the training behavior and production migration boundary need an explicit decision.
-- **Personal-document visibility (FR-027)**: The stakeholder says users can view their own documents, while role descriptions grant team leads/administrators broader access. The P1 authorization boundary must be confirmed: owner-only, or role-based elevated access to personal files.
+- **Metadata for multiple files**: Resolved as per-file metadata. Each selected file receives its own title, category, description, project, and tags before persistence.
+- **Mixed-validity batches**: Resolved as atomic P1 batches. Any invalid file rejects the entire multi-file submission and leaves no persisted content or metadata.
+- **Malware scanning**: Resolved for the training MVP by deferring real scanning and requiring pre-persistence size, type, content-type, and metadata validation. Production malware scanning remains a migration requirement.
+- **Personal-document visibility**: Resolved for P1 as owner-only by default. Later sharing or project association may grant access through the corresponding authorized flows.
+- **P1 project association**: Resolved as strictly personal with no project association. Project association is deferred to later project-document stories.
 
 ## Success Criteria *(mandatory)*
 
