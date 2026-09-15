@@ -1,0 +1,91 @@
+openapi: 3.0.3
+info:
+  title: ContosoDashboard Document Management (Training)
+  version: 1.0.0
+  description: Offline training contract for the P1 personal document flow and authorized file serving.
+paths:
+  /documents:
+    get:
+      summary: List the current user's personal documents
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Owner-visible document summaries
+        '401':
+          description: Authentication required
+    post:
+      summary: Upload one or more personal documents
+      description: Metadata is per file. The batch is atomic; any invalid file rejects the entire request.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files, metadata]
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                metadata:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DocumentMetadata'
+      responses:
+        '201':
+          description: All files stored and metadata committed
+        '400':
+          description: Validation failure; no batch content or metadata is persisted
+        '401':
+          description: Authentication required
+        '403':
+          description: Service authorization denied
+  /documents/{documentId}/content:
+    get:
+      summary: Download an authorized document
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: File content
+        '401':
+          description: Authentication required
+        '403':
+          description: Service authorization denied
+        '404':
+          description: Document not found or unavailable
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: .AspNetCore.Cookies
+  parameters:
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+  schemas:
+    DocumentMetadata:
+      type: object
+      required: [title, category]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [Project Documents, Team Resources, Personal Files, Reports, Presentations, Other]
+        tags:
+          type: string
