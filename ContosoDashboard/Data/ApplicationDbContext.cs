@@ -1,5 +1,5 @@
+﻿using ContosoDashboard.Models;
 using Microsoft.EntityFrameworkCore;
-using ContosoDashboard.Models;
 
 namespace ContosoDashboard.Data;
 
@@ -17,12 +17,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; } = null!;
     public DbSet<ProjectMember> ProjectMembers { get; set; } = null!;
     public DbSet<Announcement> Announcements { get; set; } = null!;
+    public DbSet<Document> Documents { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure User relationships
         modelBuilder.Entity<User>()
             .HasMany(u => u.AssignedTasks)
             .WithOne(t => t.AssignedUser)
@@ -41,7 +41,6 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(p => p.ProjectManagerId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Configure indexes for performance
         modelBuilder.Entity<TaskItem>()
             .HasIndex(t => t.AssignedUserId);
 
@@ -64,13 +63,42 @@ public class ApplicationDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
-        // Seed initial data
+        modelBuilder.Entity<Document>()
+            .HasIndex(d => d.UploadedByUserId);
+
+        modelBuilder.Entity<Document>()
+            .HasIndex(d => d.UploadedAtUtc);
+
+        modelBuilder.Entity<Document>()
+            .HasIndex(d => d.Category);
+
+        modelBuilder.Entity<Document>()
+            .Property(d => d.ContentType)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<Document>()
+            .Property(d => d.Category)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<Document>()
+            .Property(d => d.OriginalFileName)
+            .HasMaxLength(255);
+
+        modelBuilder.Entity<Document>()
+            .Property(d => d.StoragePath)
+            .HasMaxLength(500);
+
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.UploadedByUser)
+            .WithMany(u => u.Documents)
+            .HasForeignKey(d => d.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         SeedData(modelBuilder);
     }
 
     private void SeedData(ModelBuilder modelBuilder)
     {
-        // Seed an admin user
         modelBuilder.Entity<User>().HasData(
             new User
             {
@@ -126,7 +154,6 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // Seed a sample project
         modelBuilder.Entity<Project>().HasData(
             new Project
             {
@@ -142,7 +169,6 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // Seed sample tasks
         modelBuilder.Entity<TaskItem>().HasData(
             new TaskItem
             {
@@ -188,7 +214,6 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // Seed project members
         modelBuilder.Entity<ProjectMember>().HasData(
             new ProjectMember
             {
@@ -208,7 +233,6 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // Seed announcement
         modelBuilder.Entity<Announcement>().HasData(
             new Announcement
             {

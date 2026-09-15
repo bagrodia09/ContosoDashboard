@@ -1,0 +1,280 @@
+﻿@page "/documents"
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+
+<PageTitle>My Documents</PageTitle>
+
+<h1>My Documents</h1>
+
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_successMessage))
+{
+    <div class="alert alert-success">@_successMessage</div>
+}
+
+<EditForm Model="this" OnValidSubmit="HandleUploadAsync">
+    <div class="mb-3">
+        <label class="form-label">Select files</label>
+        <InputFile OnChange="HandleSelectionChanged" multiple />
+    </div>
+
+    @if (_selectedEntries.Count > 0)
+    {
+        @foreach (var entry in _selectedEntries)
+        {
+            <div class="card mb-3 p-3">
+                <h5>@entry.FileName</h5>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Title</label>
+                        <InputText @bind-Value="entry.Title" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Category</label>
+                        <InputSelect @bind-Value="entry.Category" class="form-select">
+                            <option value="Project Documents">Project Documents</option>
+                            <option value="Team Resources">Team Resources</option>
+                            <option value="Personal Files">Personal Files</option>
+                            <option value="Reports">Reports</option>
+                            <option value="Presentations">Presentations</option>
+                            <option value="Other">Other</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Description</label>
+                        <InputTextArea @bind-Value="entry.Description" class="form-control" rows="3" />
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Tags</label>
+                        <InputText @bind-Value="entry.Tags" class="form-control" />
+                    </div>
+                </div>
+            </div>
+        }
+
+        <button type="submit" class="btn btn-primary" disabled="@_isBusy">Upload selected files</button>
+        @if (_isBusy)
+        {
+            <div class="progress mt-3" role="progressbar" aria-label="Upload progress">
+                @if (_uploadProgress.HasValue)
+                {
+                    <div class="progress-bar" style="width:@($"{_uploadProgress.Value}%")">@_uploadProgress%</div>
+                }
+                else
+                {
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%">Uploading…</div>
+                }
+            </div>
+        }
+    }
+</EditForm>
+
+<hr class="my-4" />
+
+<h2>Uploaded by you</h2>
+
+@if (_ownedDocuments.Count == 0)
+{
+    <p class="text-muted">No personal documents uploaded yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>Uploaded</th>
+                    <th>Size</th>
+                    <th>File</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var document in _ownedDocuments)
+                {
+                    <tr>
+                        <td>@document.Title</td>
+                        <td>@document.Category</td>
+                        <td>@document.UploadedAtUtc.ToLocalTime().ToString("g")</td>
+                        <td>@FormatSize(document.FileSizeBytes)</td>
+                        <td><a href="/api/documents/@document.DocumentId/content">Download</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private readonly List<DocumentUploadEntry> _selectedEntries = new();
+    private readonly List<Document> _ownedDocuments = new();
+    private string? _errorMessage;
+    private string? _successMessage;
+    private bool _isBusy;
+    private int? _uploadProgress;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        try
+        {
+            var documents = await DocumentService.GetOwnedDocumentsAsync();
+            _ownedDocuments.Clear();
+            foreach (var document in documents)
+            {
+                _ownedDocuments.Add(document);
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _errorMessage = "Authentication is required to access your documents.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleSelectionChanged(InputFileChangeEventArgs e)
+    {
+        _selectedEntries.Clear();
+        _errorMessage = null;
+        _successMessage = null;
+
+        try
+        {
+            foreach (var file in e.GetMultipleFiles())
+            {
+                if (file.Size > 26_214_400)
+                {
+                    _errorMessage = $"{file.Name} exceeds the 25 MiB (26,214,400 byte) limit.";
+                    _selectedEntries.Clear();
+                    return;
+                }
+
+                var memoryStream = new MemoryStream();
+                await using (var source = file.OpenReadStream(26_214_400))
+                {
+                    await source.CopyToAsync(memoryStream);
+                }
+
+                memoryStream.Position = 0;
+                _selectedEntries.Add(new DocumentUploadEntry
+                {
+                    FileName = file.Name,
+                    ContentType = file.ContentType,
+                    SizeBytes = file.Size,
+                    FileStream = memoryStream,
+                    Category = "Personal Files",
+                    Title = file.Name
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _selectedEntries.Clear();
+            _errorMessage = $"Unable to read the selected file(s): {ex.Message}";
+        }
+    }
+
+    private async Task HandleUploadAsync()
+    {
+        if (_selectedEntries.Count == 0)
+        {
+            _errorMessage = "Select at least one file before uploading.";
+            return;
+        }
+
+        _isBusy = true;
+        _uploadProgress = 0;
+        _errorMessage = null;
+        _successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var requests = _selectedEntries.Select(entry => new DocumentUploadRequest
+            {
+                FileName = entry.FileName,
+                ContentType = string.IsNullOrWhiteSpace(entry.ContentType) ? "application/octet-stream" : entry.ContentType,
+                FileSizeBytes = entry.SizeBytes,
+                FileStream = entry.FileStream,
+                Title = entry.Title,
+                Category = entry.Category,
+                Description = entry.Description,
+                Tags = entry.Tags
+            }).ToList();
+
+            var results = await DocumentService.UploadBatchAsync(requests);
+            _uploadProgress = 100;
+            var invalidResults = results.Where(r => !string.IsNullOrEmpty(r.Status) && (r.Status == "Rejected" || r.Status == "ValidatedNotPersisted")).ToList();
+
+            if (invalidResults.Count > 0)
+            {
+                var combined = string.Join("; ", invalidResults.SelectMany(r => r.ValidationErrors).Distinct());
+                _errorMessage = string.IsNullOrWhiteSpace(combined)
+                    ? "One or more files could not be uploaded."
+                    : combined;
+            }
+            else
+            {
+                _successMessage = $"{results.Length} file(s) uploaded successfully.";
+            }
+
+            _selectedEntries.Clear();
+            await LoadDocumentsAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _errorMessage = "Authentication is required to upload files.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            _uploadProgress = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatSize(long sizeBytes)
+    {
+        const long kib = 1024;
+        const long mib = kib * 1024;
+        if (sizeBytes >= mib)
+        {
+            return $"{(double)sizeBytes / mib:0.##} MiB";
+        }
+
+        if (sizeBytes >= kib)
+        {
+            return $"{(double)sizeBytes / kib:0.##} KiB";
+        }
+
+        return $"{sizeBytes} bytes";
+    }
+
+    private sealed class DocumentUploadEntry
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "application/octet-stream";
+        public long SizeBytes { get; set; }
+        public MemoryStream FileStream { get; set; } = new();
+        public string Title { get; set; } = string.Empty;
+        public string Category { get; set; } = "Personal Files";
+        public string? Description { get; set; }
+        public string? Tags { get; set; }
+    }
+}
