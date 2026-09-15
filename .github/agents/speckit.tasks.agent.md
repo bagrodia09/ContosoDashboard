@@ -68,7 +68,10 @@ The tasks.md should be immediately executable - each task must be specific enoug
 
 **CRITICAL**: Tasks MUST be organized by user story to enable independent implementation and testing.
 
-**Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
+**Tests are REQUIRED**: Generate test tasks for every acceptance criterion and
+for constitution-mandated authorization, validation, storage-ordering, and
+offline behavior. Choose unit, integration, or end-to-end coverage based on the
+feature; do not omit tests because the specification failed to request them.
 
 ### Checklist Format (REQUIRED)
 

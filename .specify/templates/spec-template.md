@@ -5,6 +5,11 @@
 **Status**: Draft  
 **Input**: User description: "$ARGUMENTS"
 
+> Specifications MUST be independently testable, include offline behavior and
+> training-only limitations where relevant, and state authorization and
+> validation expectations explicitly. Do not imply production readiness for this
+> training application.
+
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
@@ -89,6 +94,10 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+
+For file features, requirements MUST state that content is stored outside
+`wwwroot` behind `IFileStorageService`, that service-level authorization is
+enforced, and that size/type/metadata validation occurs before persistence.
 
 *Example of marking unclear requirements:*
 

@@ -31,7 +31,12 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+The plan MUST show how the feature preserves the ASP.NET Core/Blazor Server
+architecture and mock authentication, works offline, keeps files outside
+`wwwroot`, uses `IFileStorageService` for file business logic, enforces
+service-level authorization, validates inputs, and defines independently
+testable acceptance coverage. Any deviation MUST be recorded in Complexity
+Tracking with a rationale and migration or training-only limitation.
 
 ## Project Structure
 
