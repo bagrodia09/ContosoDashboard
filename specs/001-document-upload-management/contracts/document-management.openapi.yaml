@@ -12,6 +12,12 @@ paths:
       responses:
         '200':
           description: Owner-visible document summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentSummary'
         '401':
           description: Authentication required
     post:
@@ -34,17 +40,117 @@ paths:
                     format: binary
                 metadata:
                   type: array
+                  description: Positional metadata; metadata[i] belongs to files[i]. Length must equal files length.
                   items:
                     $ref: '#/components/schemas/DocumentMetadata'
       responses:
         '201':
           description: All files stored and metadata committed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUploadSuccess'
+              example:
+                results:
+                  - displayFileName: report.pdf
+                    status: Persisted
+                    validationErrors: []
+                    persisted: true
+                    documentId: 42
         '400':
           description: Validation failure; no batch content or metadata is persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUploadResult'
+              example:
+                results:
+                  - displayFileName: report.pdf
+                    status: ValidatedNotPersisted
+                    validationErrors: []
+                    persisted: false
+                  - displayFileName: notes.exe
+                    status: Rejected
+                    validationErrors:
+                      - File type is not supported.
+                    persisted: false
         '401':
           description: Authentication required
         '403':
           description: Service authorization denied
+  /documents/search:
+    post:
+      summary: [DEFERRED P2] Search authorized documents
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentSearchQuery'
+      responses:
+        '200':
+          description: Authorized document summaries
+  /documents/{documentId}:
+    patch:
+      summary: [DEFERRED P4] Edit document metadata
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditDocumentMetadataRequest'
+      responses:
+        '200':
+          description: Updated document summary
+        '403':
+          description: Authorization denied
+    delete:
+      summary: [DEFERRED P4] Permanently delete a document
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '204':
+          description: Document content and metadata deleted
+        '403':
+          description: Authorization denied
+  /documents/{documentId}/association:
+    put:
+      summary: [DEFERRED P3] Associate a document with a project or task
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectTaskAssociation'
+      responses:
+        '200':
+          description: Association updated
+        '403':
+          description: Authorization denied
+  /dashboard/documents:
+    get:
+      summary: [DEFERRED P6] Get authorized document dashboard summary
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Recent documents and document count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentDashboardSummary'
   /documents/{documentId}/content:
     get:
       summary: Download an authorized document
@@ -61,6 +167,94 @@ paths:
           description: Service authorization denied
         '404':
           description: Document not found or unavailable
+  /documents/activity:
+    get:
+      summary: [DEFERRED P6] List successful document activity
+      description: Later-story event contract; denied attempts are excluded.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: fromUtc
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: toUtc
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful activity events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DocumentActivity'
+        '403':
+          description: Administrator authorization required
+  /documents/activity/report:
+    get:
+      summary: [DEFERRED P6] Get administrator document activity report
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: fromUtc
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: toUtc
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Administrator report aggregates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityReport'
+        '403':
+          description: Administrator authorization required
+  /documents/{documentId}/shares:
+    post:
+      summary: [DEFERRED P5] Share a document with a user or team
+      description: Later-story contract; authorization remains enforced by the business service.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareDocumentRequest'
+      responses:
+        '201':
+          description: Share created and recipient notification queued
+        '400':
+          description: Invalid share target
+        '403':
+          description: Share authorization denied
 components:
   securitySchemes:
     cookieAuth:
@@ -82,10 +276,221 @@ components:
       properties:
         title:
           type: string
+          maxLength: 200
         description:
           type: string
+          maxLength: 2000
         category:
           type: string
           enum: [Project Documents, Team Resources, Personal Files, Reports, Presentations, Other]
         tags:
           type: string
+          maxLength: 1000
+    DocumentSummary:
+      type: object
+      required: [documentId, title, category, uploadedAtUtc, fileSizeBytes, associatedProject]
+      properties:
+        documentId:
+          type: integer
+          format: int32
+        title:
+          type: string
+        category:
+          type: string
+        uploadedAtUtc:
+          type: string
+          format: date-time
+        fileSizeBytes:
+          type: integer
+          format: int64
+        associatedProject:
+          type: string
+          nullable: true
+    BatchUploadSuccess:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileUploadSuccess'
+    FileUploadSuccess:
+      type: object
+      required: [displayFileName, status, validationErrors, persisted, documentId]
+      properties:
+        displayFileName:
+          type: string
+        status:
+          type: string
+          enum: [Persisted]
+        validationErrors:
+          type: array
+          items:
+            type: string
+        persisted:
+          type: boolean
+        documentId:
+          type: integer
+          format: int32
+    FileUploadResult:
+      type: object
+      required: [displayFileName, status, validationErrors, persisted]
+      properties:
+        displayFileName:
+          type: string
+        status:
+          type: string
+          enum: [ValidatedNotPersisted, Rejected]
+        validationErrors:
+          type: array
+          items:
+            type: string
+        persisted:
+          type: boolean
+    BatchUploadResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileUploadResult'
+    ShareDocumentRequest:
+      oneOf:
+        - type: object
+          required: [userId]
+          properties:
+            userId:
+              type: integer
+              format: int32
+          additionalProperties: false
+        - type: object
+          required: [teamId]
+          properties:
+            teamId:
+              type: integer
+              format: int32
+          additionalProperties: false
+      description: Exactly one of userId or teamId is required.
+    DocumentActivity:
+      type: object
+      required: [documentId, actorUserId, occurredAtUtc, operation, outcome]
+      properties:
+        documentId:
+          type: integer
+          format: int32
+        actorUserId:
+          type: integer
+          format: int32
+        occurredAtUtc:
+          type: string
+          format: date-time
+        operation:
+          type: string
+          enum: [Upload, Download, Delete, Share]
+        outcome:
+          type: string
+          enum: [Success]
+    ActivityReport:
+      type: object
+      required: [fromUtc, toUtc, documentTypeCounts, uploaderCounts, accessCountsByOperation]
+      properties:
+        fromUtc:
+          type: string
+          format: date-time
+        toUtc:
+          type: string
+          format: date-time
+        category:
+          type: string
+        documentTypeCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        uploaderCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        accessCountsByOperation:
+          type: object
+          additionalProperties:
+            type: integer
+    DocumentSearchQuery:
+      type: object
+      properties:
+        search:
+          type: string
+        category:
+          type: string
+        projectId:
+          type: integer
+          format: int32
+        fromUtc:
+          type: string
+          format: date-time
+        toUtc:
+          type: string
+          format: date-time
+        sort:
+          type: string
+          enum: [title, uploadDate, category, fileSize]
+    ProjectTaskAssociation:
+      oneOf:
+        - type: object
+          required: [projectId]
+          properties:
+            projectId:
+              type: integer
+              format: int32
+          additionalProperties: false
+        - type: object
+          required: [taskId]
+          properties:
+            taskId:
+              type: integer
+              format: int32
+          additionalProperties: false
+      description: Exactly one association is allowed. A task association derives and validates its project context from the task.
+    EditDocumentMetadataRequest:
+      type: object
+      required: [title, category]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        category:
+          type: string
+        tags:
+          type: string
+          maxLength: 1000
+    DocumentDashboardSummary:
+      type: object
+      required: [recentDocuments, documentCount]
+      properties:
+        recentDocuments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DocumentSummary'
+        documentCount:
+          type: integer
+          format: int32
+    DocumentShareNotification:
+      type: object
+      required: [documentId, recipientUserId, sharedByUserId, createdAtUtc]
+      properties:
+        documentId:
+          type: integer
+          format: int32
+        recipientUserId:
+          type: integer
+          format: int32
+        sharedByUserId:
+          type: integer
+          format: int32
+        createdAtUtc:
+          type: string
+          format: date-time

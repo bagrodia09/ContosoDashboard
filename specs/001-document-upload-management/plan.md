@@ -14,7 +14,7 @@ Extend the existing net8.0 ASP.NET Core Blazor Server training application with 
 **Testing**: Existing repository test conventions if present; add offline unit/integration/acceptance coverage for the feature without external services  
 **Target Platform**: Local Windows training environment running the existing ASP.NET Core web application  
 **Project Type**: Single web application  
-**Performance Goals**: Preserve stakeholder candidate limits as deferred local benchmarks: 25 MB upload up to 30 seconds, list/search up to 2 seconds for 500 documents, preview up to 3 seconds  
+**Performance Goals**: Preserve stakeholder candidate limits as deferred local benchmarks: 25 MiB upload up to 30 seconds, list/search up to 2 seconds for 500 documents, preview up to 3 seconds  
 **Constraints**: Must work offline; no Azure or external scanner; files outside `wwwroot`; service-level authorization; no destructive database recreation; P1 owner-only personal documents; atomic multi-file uploads  
 **Scale/Scope**: P1 personal upload/list plus contracts and model seams for later search, project, lifecycle, sharing, integration, and reporting stories
 
@@ -35,12 +35,12 @@ No violations require Complexity Tracking.
 
 ### Application changes
 
-1. Add `Models/Document.cs` with `int DocumentId`, text category, `nvarchar(255)` content type, ownership, safe relative storage path, optional future project/task keys, and validation-friendly metadata.
-2. Add `Document` to `ApplicationDbContext`, configure lengths, indexes, required relationships, and category/content-type constraints using the existing EF conventions.
+1. Add `Models/Document.cs` with `int DocumentId`, text category, `nvarchar(255)` content type, ownership, safe relative storage path, and validation-friendly P1 metadata. Use the exact extension/MIME matrix in the specification and reject mismatches. Defer project/task properties and foreign keys until the later project/task story identifies the existing key types.
+2. Add `Document` to `ApplicationDbContext`, configure lengths, indexes, the required owner relationship, and category/content-type constraints using the existing EF conventions. Do not add speculative project/task foreign keys to the P1 schema.
 3. Add `Services/IFileStorageService.cs` and `Services/LocalFileStorageService.cs`. Resolve a configured root outside `wwwroot`; reject rooted paths, traversal, and mismatched resolved roots. Generate GUID-based names and return portable relative paths. Save to a temporary path and atomically move when practical.
-4. Add document validation and service contracts/models. `DocumentService` obtains the authenticated user from the existing claims context, enforces owner-only P1 access, validates all batch entries before saving, saves files before metadata, and deletes saved files if a later save fails.
+4. Add document validation and service contracts/models. `DocumentService` obtains the authenticated user from the existing claims context, enforces owner-only P1 access, validates all batch entries before saving using the specification's MIME matrix, returns per-file results with display file name, status, validation errors, and persisted flag for rejected atomic batches, and the upload endpoint returns HTTP 400 with that result array. It saves files before metadata and deletes saved files if a later save fails.
 5. Register the services in `Program.cs` with dependency injection and a configured storage root. Preserve existing authentication, authorization policies, middleware, pages, and seed behavior.
-6. Add an authenticated Blazor page for upload/My Documents. Keep UI checks supplemental; all decisions remain in `DocumentService`.
+6. Add an authenticated Blazor page for upload/My Documents. Capture metadata per file, omit project association in P1, show per-file and aggregate progress from 0% through 100% when stream length is known, or an indeterminate progress bar from upload start until success/error otherwise; show success only after complete persistence and errors for validation/storage/persistence failures. Keep UI checks supplemental; all decisions remain in `DocumentService`.
 7. Add an authenticated file-serving endpoint (controller/minimal endpoint consistent with the application) that parses integer IDs, asks `DocumentService` for an authorized stream, and returns the stored content type. Never construct a path from a request filename or expose the storage directory as static files.
 
 ### Database schema and `EnsureCreated` transition
@@ -49,19 +49,19 @@ The current startup call to `EnsureCreated` is suitable only for a brand-new emp
 
 - Detect whether the database is empty/new versus an existing `EnsureCreated` database.
 - For an existing database, verify expected existing tables/columns and take the documented LocalDB backup before upgrade.
-- Execute an idempotent, additive transaction that creates `Documents`, indexes, and foreign keys if absent, without dropping or altering existing user tables/data.
+- Execute an idempotent, additive transaction that creates `Documents` and its owner index/foreign key if absent, without dropping or altering existing user tables/data. Defer project/task foreign keys until their existing key types are confirmed.
 - Record a schema version (or equivalent migration marker) so repeat startup is safe.
 - On mismatch, backup failure, permission failure, or SQL error, log the precise error and fail initialization; do not call `EnsureDeleted`, do not silently recreate, and do not claim the feature is available.
 - For future schema evolution, add EF migrations after this baseline. Do not pretend an EF migration history exists for databases originally created only with `EnsureCreated`; document the one-time baseline/upgrade procedure.
 
 ### Upload failure and cleanup
 
-- Validate the complete batch before opening storage writes.
+- Validate the complete batch before opening storage writes as required by FR-014a.
 - Generate one unique path per file.
 - Save all files through `IFileStorageService`.
 - Save metadata in one EF transaction.
-- If any file save fails, delete files already saved in the batch.
-- If metadata transaction fails, delete every newly saved file and leave no database rows.
+- If any file save fails, delete files already saved in the batch as required by FR-014a.
+- If metadata transaction fails, delete every newly saved file and leave no database rows as required by FR-014a.
 - Surface the original failure and cleanup failures through logging; never convert a failed upload into a success response.
 
 ## Project Structure
@@ -91,10 +91,10 @@ tests/ (or the repository's established test project location)
 
 ## Testing Plan
 
-- Unit: extension/content-type/size/metadata validation; category and MIME length; GUID/relative path and traversal defenses.
+- Unit: exact modern Office extension/content-type mappings (`.docx`, `.xlsx`, `.pptx`), extension/content-type/size/metadata validation; category and MIME length; GUID/relative path and traversal defenses.
 - Unit: owner-only authorization for list/upload/read/file serving; denied IDOR cases.
 - Integration: storage-before-metadata ordering; failed file save cleanup; failed metadata transaction cleanup; atomic mixed-validity batch.
-- Integration: additive schema upgrade against a copy of an existing `EnsureCreated` LocalDB database, proving existing rows remain.
+- Integration: additive schema upgrade against a copy of an existing `EnsureCreated` LocalDB database, proving existing rows remain and no speculative project/task foreign keys are created.
 - Acceptance: offline mock-user upload and My Documents listing; invalid upload messages; second mock user cannot list/download the first user's personal document.
 - Regression: existing authentication, dashboard, project, task, notification, and seed flows remain unchanged.
 
